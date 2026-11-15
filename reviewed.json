@@ -1,7 +1,7 @@
 {
  "tools": {
   "kakaotalk": {
-   "version": "ebc58197a4c1",
+   "version": "461fabeda024",
    "findings": [
     "destructive-command"
    ],
