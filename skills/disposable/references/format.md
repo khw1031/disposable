@@ -62,6 +62,7 @@ Flat `key: value` lines between `---` markers. Lists are comma separated. A skil
 | `source_path` | no | Folder inside `source` |
 | `source_commit` | with `source` | Full 40-character commit SHA that was reviewed |
 | `art` | no | Preset picture when there is no `thumbnail.png`: `files`, `table`, `draw`, `notes`, `timer` or `text`. Left out, the site picks one from the slug |
+| `title_<lang>`, `summary_<lang>` | no | The title and summary in another site language, written or approved by the maker. `<lang>` is `en`, `ko`, `ja`, `zh_hans` or `zh_hant`, never the original `language`; up to 100 and 240 characters. The site shows them in that language and marks them as translations. Nothing is translated automatically |
 
 ## Sections
 
@@ -96,6 +97,7 @@ origin: https://skills.sh/expo/skills/react-native
 - `SKILL.md` front matter: `name` of lowercase letters, digits and single hyphens, up to 64 characters, and `description` up to 1024 characters. A local `SKILL.md` must also have `name` equal to `<slug>`; the check enforces all three. The index build reads an external `SKILL.md` at `source_commit` and holds the skill off the site while it is missing or breaks these rules.
 - Derived when left out: `title` from the first `# ` heading of `SKILL.md`, else `name`; `summary` from `description`, cut to 240 characters; `author` from the owner of `source`, else the first maintainer; `language` `en`; `mode` `ai`; `device` `any`; `cost` and `support` empty. Write a key to say otherwise, for example `language: ko` for a skill written in Korean.
 - The five sections are optional for a skill. A section that is written must not be empty.
+- A skill may add `description_<lang>` (up to 1024 characters), a translation of its `SKILL.md` description that the site shows in that language next to the original. The `SKILL.md` instructions stay in their original language.
 - The site shows the instructions (up to 20,000 characters) and an install command pinned to the reviewed commit: `npx skills add https://github.com/<registry>/tree/<commit>/tools/<slug>` for a local skill, `npx skills add <source>/tree/<source_commit>/<source_path>` for an external one.
 
 ## License

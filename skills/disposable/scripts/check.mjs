@@ -51,6 +51,11 @@ const REQUIRED = ['title', 'summary', 'type', 'mode', 'device', 'language', 'lic
 const REQUIRED_SECTIONS = ['steps', 'rebuild'];
 // An optional square picture for the site, loaded from GitHub, which serves only PNG as an image (FORMAT.md, Folder).
 export const THUMBNAIL = { path: 'thumbnail.png', bytes: 256 * 1024 };
+// The maker's own translations into the site's other languages (FORMAT.md). Keys allow only a-z and _, so
+// zh-Hans and zh-Hant are written zh_hans and zh_hant. Nothing is translated automatically.
+export const TRANSLATION_LOCALES = { en: 'en', ko: 'ko', ja: 'ja', zh_hans: 'zh-Hans', zh_hant: 'zh-Hant' };
+const TRANSLATION_KEY = /^(title|summary|description)_(en|ko|ja|zh_hans|zh_hant)$/;
+const TRANSLATION_MAX = { title: 100, summary: 240, description: 1024 };
 // A skill is defined by its SKILL.md (the Agent Skills format used by skills.sh); DISPOSABLE.md only registers it.
 // Everything else is optional for a skill and derived by the index build when absent.
 const SKILL_REQUIRED = ['type', 'license', 'maintainers', 'added'];
@@ -99,7 +104,7 @@ export function parseDisposable(text) {
     const pair = line.match(/^([a-z_]+):\s*(.*)$/);
     if (!pair) { problems.push(`front matter line is not "key: value": ${line.slice(0, 60)}`); continue; }
     const [, key, value] = pair;
-    if (!FIELDS.includes(key)) problems.push(`unknown front matter key: ${key}`);
+    if (!FIELDS.includes(key) && !TRANSLATION_KEY.test(key)) problems.push(`unknown front matter key: ${key}`);
     else if (key in meta) problems.push(`duplicate front matter key: ${key}`);
     else meta[key] = value.trim();
   }
@@ -193,6 +198,13 @@ export function validateTool(slug, parsed, files, today = new Date().toISOString
   if (m.language && !LANGUAGES.includes(m.language)) problems.push(`language must be one of ${LANGUAGES.join(', ')}`);
   if (m.license && !LICENSES.includes(m.license)) problems.push(`license must be one of ${LICENSES.join(', ')}`);
   if (m.art && !ARTS.includes(m.art)) problems.push(`art must be one of ${ARTS.join(', ')}`);
+  for (const key of Object.keys(m).filter(k => TRANSLATION_KEY.test(k))) {
+    const [, field, suffix] = key.match(TRANSLATION_KEY), locale = TRANSLATION_LOCALES[suffix];
+    if (locale === (m.language || 'en')) problems.push(`${key} repeats the original language (${locale}); the original goes in ${field === 'description' ? 'SKILL.md' : field}`);
+    else if (!m[key]) problems.push(`${key} is empty`);
+    else if (m[key].length > TRANSLATION_MAX[field]) problems.push(`${key} is longer than ${TRANSLATION_MAX[field]} characters`);
+    if (field === 'description' && !skill) problems.push(`${key} is only for a skill (a translation of its SKILL.md description)`);
+  }
   if (m.added && !validDate(m.added)) problems.push('added must be a real date as YYYY-MM-DD');
   if (m.added && validDate(m.added) && m.added > today) problems.push('added cannot be in the future');
   const maintainers = (m.maintainers || '').split(',').map(v => v.trim()).filter(Boolean);
