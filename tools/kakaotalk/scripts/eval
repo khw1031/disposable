@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Offline eval: no KakaoTalk, no launchd changes, no network.
+set -euo pipefail
+
+skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cli="$skill_dir/scripts/kakaotalk"
+fixture="$skill_dir/tests/fixtures/rows-synthetic.json"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+echo "## kakaotalk skill eval"
+
+test -f "$skill_dir/SKILL.md"
+test -x "$cli"
+test -x "$skill_dir/scripts/eval"
+test -f "$skill_dir/scripts/kakaotalk-ax.swift"
+test -f "$skill_dir/references/ax-model.md"
+test -f "$skill_dir/references/scheduling.md"
+grep -q '^name: kakaotalk$' "$skill_dir/SKILL.md"
+grep -q '^## Failure spec' "$skill_dir/SKILL.md"
+grep -q '^## Termination' "$skill_dir/SKILL.md"
+echo "PASS: structure"
+
+# Global-layout adapter check only when the skill is enabled in an .agents-style repo.
+agents_root="$(cd "$skill_dir/../.." && pwd)"
+if [ -f "$agents_root/enabled" ] && grep -qx 'kakaotalk' "$agents_root/enabled"; then
+  adapter="$HOME/.claude/skills/kakaotalk"
+  test -L "$adapter" && test "$(readlink "$adapter")" = "$skill_dir"
+  echo "PASS: adapter symlink"
+fi
+
+"$cli" --help | grep -q 'KakaoTalk'
+echo "PASS: help"
+
+# --- normalization on synthetic rows
+"$cli" normalize "$fixture" > "$work/norm.json"
+python3 - "$work/norm.json" <<'PY'
+import json, sys
+m = {x["i"]: x for x in json.load(open(sys.argv[1]))["messages"]}
+assert 0 not in m and 9 not in m, "date/spacer rows are not messages"
+assert m[8]["mine"] and m[8].get("send_failed") is True and m[8]["time"] is None, "retry/delete buttons = undelivered"
+assert not m[4].get("send_failed") and not m[7].get("send_failed")
+assert m[1]["sender"] == "앨리스" and not m[1]["mine"] and m[1]["time"] == "09:05" and m[1]["date"] == "2026-01-02"
+assert m[2]["sender"] == "앨리스" and m[2].get("sender_inferred") is True, "continuation inherits sender"
+assert m[2]["time"] == "09:06" and m[2].get("time_inferred") is True, "time backfilled from the run's last bubble"
+assert m[3]["time"] == "09:06" and not m[3].get("time_inferred")
+assert m[4]["mine"] is True and m[4]["sender"] is None and m[4]["time"] == "13:30"
+assert m[5]["kind"] == "system" and "삭제" in m[5]["text"]
+assert m[6]["kind"] == "media" and m[6]["sender"] == "밥" and not m[6]["mine"]
+assert m[7]["mine"] and m[7]["time"] == "23:59" and len(m[7]["parts"]) == 3
+print("PASS: normalize")
+PY
+
+# --- scheduling validation (dry-run; paths redirected to a temp dir)
+export KAKAOTALK_SKILL_HOME="$work/home" KAKAOTALK_SKILL_LOGS="$work/logs" KAKAOTALK_SKILL_LAUNCHAGENTS="$work/agents"
+expect_fail() { if "$cli" schedule add "$@" --dry-run >"$work/o.json" 2>&1; then echo "FAIL: expected rejection: $*" >&2; cat "$work/o.json" >&2; exit 1; fi; }
+expect_fail --self --text t --every 30m                    # periodic without limit
+expect_fail --self --text t --every 30s --max-runs 2        # interval too short
+expect_fail --self --text t --at "2001-01-01 00:00"         # past
+expect_fail --self --text t --at "2099-01-01 00:00" --every 1h --max-runs 1   # two modes
+expect_fail --self --text t --cron "0-59 0-23 * * *" --max-runs 1 # expands beyond cap
+expect_fail --self --text t --cron "61 * * * *" --max-runs 1
+
+"$cli" schedule add --self --text "t" --at "2099-03-04 05:06" --dry-run > "$work/at.json"
+"$cli" schedule add --room "방" --text "t" --cron "0 9 * * 1-5" --until "2099-12-31 23:59" --dry-run > "$work/cron.json"
+"$cli" schedule add --self --text "t" --every 2m --max-runs 2 --dry-run > "$work/every.json"
+python3 - "$work" <<'PY'
+import json, sys, os
+w = sys.argv[1]
+at = json.load(open(f"{w}/at.json"))
+assert at["plist"]["StartCalendarInterval"] == {"Month": 3, "Day": 4, "Hour": 5, "Minute": 6}
+assert at["plist"]["ProgramArguments"][1] == "job" and "once_at" in at["job"]
+assert at["plist"]["ProgramArguments"][0].endswith("/KakaoTalkSkillAX.app/Contents/MacOS/kakaotalk-ax"), "launchd runs the binary directly"
+cron = json.load(open(f"{w}/cron.json"))
+cal = cron["plist"]["StartCalendarInterval"]
+assert len(cal) == 5 and {e["Weekday"] for e in cal} == {1, 2, 3, 4, 5} and all(e["Hour"] == 9 and e["Minute"] == 0 for e in cal)
+assert cron["job"]["room"] == "방" and cron["job"]["self"] is False and "until" in cron["job"]
+ev = json.load(open(f"{w}/every.json"))
+assert ev["plist"]["StartInterval"] == 120 and ev["job"]["max_runs"] == 2
+assert not os.path.exists(f"{w}/agents") and not os.path.exists(f"{w}/home/jobs"), "dry-run wrote files"
+print("PASS: schedule dry-run")
+PY
+
+"$cli" schedule list > "$work/list.json"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["jobs"] == [] and d["orphan_plists"] == []' "$work/list.json"
+echo "PASS: schedule list (empty home)"
+
+# --- swift source type-checks (skipped without toolchain)
+if command -v swiftc >/dev/null 2>&1; then
+  swiftc -typecheck "$skill_dir/scripts/kakaotalk-ax.swift"
+  echo "PASS: swift typecheck"
+else
+  echo "SKIP: swiftc not found"
+fi
+
+echo "ALL PASS"
