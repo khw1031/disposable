@@ -1,3 +1,12 @@
 {
- "tools": {}
+ "tools": {
+  "kakaotalk": {
+   "version": "ebc58197a4c1",
+   "findings": [
+    "destructive-command"
+   ],
+   "reason": "scripts/eval runs trap 'rm -rf \"$work\"' EXIT, which removes only the temporary folder it created with mktemp -d. The skill's other deletions also touch only its own files: temporary folders, its own launchd job plist and state, and an old build folder under ~/Library/Application Support/kakaotalk-skill.",
+   "reviewer": "khw1031"
+  }
+ }
 }
