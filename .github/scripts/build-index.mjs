@@ -5,7 +5,7 @@ import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { parseDisposable, validateTool, readFolder, scanText, checkSkill, githubRepo, RULES_VERSION } from '../../skills/disposable/scripts/check.mjs';
+import { parseDisposable, validateTool, readFolder, scanText, checkSkill, githubRepo, RULES_VERSION, TRANSLATION_LOCALES } from '../../skills/disposable/scripts/check.mjs';
 import { inspect } from './scan.mjs';
 export { parseDisposable };
 
@@ -37,6 +37,16 @@ export function folderVersion(files) {
   const hash = createHash('sha256');
   for (const f of files) hash.update(f.path + '\0').update(f.buffer || '');
   return hash.digest('hex').slice(0, 12);
+}
+
+// The maker's translations by site locale: { 'zh-Hans': { title, summary, description } }, empty fields left out.
+function translationsOf(m) {
+  const out = {};
+  for (const [suffix, locale] of Object.entries(TRANSLATION_LOCALES)) {
+    const t = Object.fromEntries(['title', 'summary', 'description'].map(f => [f, m[`${f}_${suffix}`] || '']).filter(([, v]) => v));
+    if (Object.keys(t).length) out[locale] = t;
+  }
+  return out;
 }
 
 export async function readTools(registryDir = defaultRegistry) {
@@ -76,6 +86,7 @@ export async function build(registryDir = defaultRegistry, fetchImpl = globalThi
       tags: m.tags || '', origin: m.origin || '', liveUrl: m.live || '', art: m.art || '',
       sourceUrl: m.source || '', sourcePath: m.source_path || '', sourceRef: m.source_commit || '',
       example: s.example || '', requirements: s.requirements || '', steps: s.steps || '', rebuild: s.rebuild || '', limits: s.limits || '',
+      translations: translationsOf(m),
     };
     // A skill is the root SKILL.md of this folder, otherwise the one at the root of source_path (read by inspect below).
     const localSkill = data.type === 'skill' ? t.files.find(f => f.path === 'SKILL.md') : null;

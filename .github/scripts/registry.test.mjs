@@ -179,6 +179,20 @@ test('programs, recipes and rules keep their core format; result, needs, limits,
   assert.ok((await problemsFor(t, { 'DISPOSABLE.md': doc({}, { 'Limits': '' }) })).includes('empty section: ## Limits'), 'a written section needs content');
 });
 
+test('the maker may add translations of the title, summary and a skill description into the other site languages', async t => {
+  const tr = { summary_ko: '영수증 메모 폴더를 표 하나로 정리한다.', title_ja: 'レシートをCSVに', summary_zh_hans: '把收据笔记整理成一张表：一行一条。', summary_zh_hant: '把收據筆記整理成一張表。' };
+  assert.deepEqual(await problemsFor(t, { 'DISPOSABLE.md': doc(tr) }), []);
+  const one = async m => problemsFor(t, { 'DISPOSABLE.md': doc(m) });
+  assert.ok((await one({ summary_en: 'Same language.' })).includes('summary_en repeats the original language (en); the original goes in summary'));
+  assert.ok((await one({ summary_fr: 'Non.' })).includes('unknown front matter key: summary_fr'));
+  assert.ok((await one({ summary_ja: 'あ'.repeat(241) })).includes('summary_ja is longer than 240 characters'));
+  assert.ok((await one({ description_ko: '설명' })).includes('description_ko is only for a skill (a translation of its SKILL.md description)'));
+  const skill = registration({ language: 'ko', description_en: 'Reads chats and sends messages.', summary_ja: 'チャットを読み、送信します。' });
+  assert.deepEqual(await problemsFor(t, { 'DISPOSABLE.md': skill, 'SKILL.md': skillDoc('receipts') }), []);
+  const index = await build(await registry(t, { receipts: { 'DISPOSABLE.md': doc(tr) } }), globalThis.fetch, { repo: 'x-ify/disposable', commit: 'b'.repeat(40) });
+  assert.deepEqual(index.tools[0].data.translations, { ko: { summary: tr.summary_ko }, ja: { title: tr.title_ja }, 'zh-Hans': { summary: tr.summary_zh_hans }, 'zh-Hant': { summary: tr.summary_zh_hant } });
+});
+
 test('an optional thumbnail is thumbnail.png at the folder root, up to 256 KiB', async t => {
   const png = size => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(size - 8)]);
   assert.deepEqual(await problemsFor(t, { 'DISPOSABLE.md': doc(), 'thumbnail.png': png(4000) }), []);
