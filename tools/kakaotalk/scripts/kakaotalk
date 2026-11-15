@@ -1,0 +1,540 @@
+#!/usr/bin/env python3
+"""kakaotalk — read, send, and schedule KakaoTalk (macOS desktop) messages via the Accessibility API.
+
+All output is JSON on stdout. Files are written only by explicit options (--media-dir) or by
+`schedule add` (job + LaunchAgent plist outside the skill directory).
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import plistlib
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+SKILL_DIR = Path(__file__).resolve().parent.parent
+SOURCE = SKILL_DIR / "scripts" / "kakaotalk-ax.swift"
+HOME = Path(os.environ.get("KAKAOTALK_SKILL_HOME", Path.home() / "Library" / "Application Support" / "kakaotalk-skill"))
+# The binary lives inside a minimal .app bundle: macOS's Accessibility list reliably accepts apps,
+# while bare command-line binaries were silently ignored (no list entry, no permission prompt).
+APP = HOME / "KakaoTalkSkillAX.app"
+BIN = APP / "Contents" / "MacOS" / "kakaotalk-ax"
+BIN_HASH = HOME / "kakaotalk-ax.source-sha256"
+BUNDLE_ID = "com.kakaotalk-skill.ax"
+JOBS = HOME / "jobs"
+LOGS = Path(os.environ.get("KAKAOTALK_SKILL_LOGS", Path.home() / "Library" / "Logs" / "kakaotalk-skill"))
+AGENTS = Path(os.environ.get("KAKAOTALK_SKILL_LAUNCHAGENTS", Path.home() / "Library" / "LaunchAgents"))
+LABEL_PREFIX = "com.kakaotalk-skill.job."
+
+TIME_RE = re.compile(r"^(오전|오후) (\d{1,2}):(\d{2})$")
+DATE_RE = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
+
+
+def out(obj, code: int = 0):
+    print(json.dumps(obj, ensure_ascii=False, indent=2))
+    sys.exit(code)
+
+
+# ---------------------------------------------------------------- build / binary
+
+def source_hash() -> str:
+    return hashlib.sha256(SOURCE.read_bytes()).hexdigest()
+
+
+def binary_state() -> str:
+    if not BIN.exists():
+        return "missing"
+    if not BIN_HASH.exists() or BIN_HASH.read_text().strip() != source_hash():
+        return "stale"
+    return "current"
+
+
+def build(force: bool = False) -> dict:
+    state = binary_state()
+    if state == "current" and not force:
+        return {"ok": True, "binary": str(BIN), "built": False}
+    swiftc = shutil.which("swiftc")
+    if not swiftc:
+        return {"ok": False, "error": "swiftc-not-found", "hint": "xcode-select --install"}
+    BIN.parent.mkdir(parents=True, exist_ok=True)
+    tmp = BIN.with_suffix(".tmp")
+    r = subprocess.run([swiftc, "-O", "-o", str(tmp), str(SOURCE)], capture_output=True, text=True)
+    if r.returncode != 0:
+        return {"ok": False, "error": "compile-failed", "stderr": r.stderr[-2000:]}
+    os.replace(tmp, BIN)
+    (APP / "Contents" / "Info.plist").write_bytes(plistlib.dumps({
+        "CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "KakaoTalkSkillAX", "CFBundleExecutable": "kakaotalk-ax",
+        "CFBundlePackageType": "APPL", "CFBundleVersion": "1", "LSUIElement": True,
+        "NSAccessibilityUsageDescription": "Reads and sends KakaoTalk messages for the kakaotalk skill."}))
+    c = subprocess.run(["codesign", "--force", "--sign", "-", "--identifier", BUNDLE_ID, str(APP)], capture_output=True, text=True)
+    if c.returncode != 0:
+        return {"ok": False, "error": "codesign-failed", "stderr": c.stderr[-1000:]}
+    BIN_HASH.write_text(source_hash())
+    legacy = HOME / "bin"
+    if legacy.is_dir():
+        shutil.rmtree(legacy, ignore_errors=True)  # pre-bundle layout
+    return {"ok": True, "binary": str(BIN), "app": str(APP), "built": True, "previous": state,
+            "warning": "App changed: re-add it under Accessibility if needed, then `doctor --launchd`."}
+
+
+def ax(*args: str, check_binary: bool = True) -> dict:
+    if check_binary:
+        st = binary_state()
+        if st == "missing":
+            b = build()
+            if not b["ok"]:
+                out(b, 1)
+        elif st == "stale":
+            out({"ok": False, "error": "binary-stale",
+                 "hint": "Source changed. Run `kakaotalk build` (scheduled jobs then need Accessibility re-granted)."}, 1)
+    r = subprocess.run([str(BIN), *args], capture_output=True, text=True)
+    try:
+        return json.loads(r.stdout)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "bad-binary-output", "stdout": r.stdout[-500:], "stderr": r.stderr[-500:]}
+
+
+# ---------------------------------------------------------------- normalization (offline-testable)
+
+def _num_time(t: str):
+    m = TIME_RE.match(t)
+    if not m:
+        return None
+    h, mi = int(m.group(2)) % 12, int(m.group(3))
+    if m.group(1) == "오후":
+        h += 12
+    return f"{h:02d}:{mi:02d}"
+
+
+def parse_date(lines):
+    for line in lines or []:
+        m = DATE_RE.search(line)
+        if m:
+            return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    return None
+
+
+def classify(row: dict, width: int) -> dict:
+    els = row.get("elements", [])
+    tas = [e for e in els if e["role"] == "AXTextArea"]
+    sts = [e for e in els if e["role"] == "AXStaticText"]
+    imgs = [e for e in els if e["role"] == "AXImage"]
+    btns = [e for e in els if e["role"] == "AXButton"]
+    has_profile = any(e.get("desc") == "프로필" for e in btns)
+    times = [e["value"] for e in sts if TIME_RE.match(e.get("value", ""))]
+    names = [e["value"] for e in sts if e.get("value") and not TIME_RE.match(e["value"])]
+    base = {"i": row["i"]}
+    if not els:
+        return {**base, "kind": "spacer"}
+    if not tas and not sts and len(btns) == 1 and not btns[0].get("desc") and len(els) == 1:
+        return {**base, "kind": "date"}
+    if len(els) == 1 and (tas or sts):
+        return {**base, "kind": "system", "text": (tas or sts)[0].get("value", "")}
+    body_els = tas or [e for e in imgs if e.get("w", 0) > 40]
+    right = max((e["x"] + e["w"] for e in body_els), default=0)
+    mine = (not has_profile) and right >= width - 30
+    msg = {**base, "kind": "text" if tas else ("media" if imgs else "other"), "mine": mine,
+           "sender": names[0] if (has_profile and names) else None,
+           "time": _num_time(times[0]) if times else None,
+           "text": "\n".join(e.get("value", "") for e in tas) if tas else None}
+    if len(tas) > 1:
+        msg["parts"] = [e.get("value", "") for e in tas]
+    if mine and not times and any(not e.get("desc") and not e.get("title") for e in btns):
+        msg["send_failed"] = True  # retry/delete buttons instead of a time label: the app did not deliver it
+    return msg
+
+
+def normalize(rows: list, width: int, dates: dict | None = None) -> list:
+    """rows: raw `kakaotalk-ax rows` output. dates: {row_index: 'YYYY-MM-DD'} from OCR."""
+    dates = dates or {}
+    items = [classify(r, width) for r in rows]
+    msgs, cur_date, last_sender = [], None, None
+    for it in items:
+        if it["kind"] == "spacer":
+            continue
+        if it["kind"] == "date":
+            cur_date, last_sender = dates.get(it["i"]), None
+            continue
+        it["date"] = cur_date
+        if it["kind"] == "system":
+            last_sender = None
+            msgs.append(it)
+            continue
+        if not it["mine"]:
+            if it["sender"]:
+                last_sender = it["sender"]
+            elif last_sender:
+                it["sender"], it["sender_inferred"] = last_sender, True
+        else:
+            last_sender = None
+        msgs.append(it)
+    # KakaoTalk prints the time once per same-sender/same-minute run, on its last bubble.
+    nxt = None
+    for m in reversed(msgs):
+        if m["kind"] == "system":
+            nxt = None
+            continue
+        if m["time"] is None and nxt and nxt["mine"] == m["mine"] and nxt.get("sender") == m.get("sender") and nxt["date"] == m["date"]:
+            m["time"], m["time_inferred"] = nxt["time"], True
+        nxt = m
+    return msgs
+
+
+# ---------------------------------------------------------------- commands
+
+def target_args(a) -> list:
+    t = ["--self"] if a.self_chat else ["--room", a.room]
+    if a.allow_unread:
+        t.append("--allow-unread")
+    if a.activate:
+        t.append("--activate")
+    return t
+
+
+def cmd_read(a):
+    o = ax("open", *target_args(a))
+    if not o.get("ok"):
+        out(o, 1)
+    win, warnings = o["window"], []
+    for _ in range(max(0, a.pages - 1)):
+        lo = ax("load-older", "--window", win)
+        if not lo.get("ok") or lo.get("loaded", 0) == 0:
+            break
+    # A freshly opened window exposes its rows before their cells are populated (empty elements for ~1s).
+    raw = {}
+    for _ in range(25):
+        raw = ax("rows", "--window", win)
+        if not raw.get("ok"):
+            out(raw, 1)
+        if any(r["visible"] and r["elements"] for r in raw["rows"]):
+            break
+        time.sleep(0.2)
+    else:
+        warnings.append({"rows": "cells-not-populated"})
+    rows, width = raw["rows"], raw["window_width"]
+    items = [classify(r, width) for r in rows]
+    dates, media_ocr = {}, {}
+    tmpdir = Path(tempfile.mkdtemp(prefix="kakaotalk-"))
+    try:
+        if a.dates:
+            for it in items:
+                if it["kind"] != "date":
+                    continue
+                c = ax("capture", "--window", win, "--row", str(it["i"]), "--out", str(tmpdir / f"d{it['i']}.png"), "--ocr")
+                d = parse_date(c.get("ocr")) if c.get("ok") else None
+                if d:
+                    dates[it["i"]] = d
+                else:
+                    warnings.append({"row": it["i"], "date_ocr": c.get("error") or "unparsed", "ocr": c.get("ocr")})
+        if a.media:
+            mdir = Path(a.media_dir).expanduser() if a.media_dir else tmpdir
+            mdir.mkdir(parents=True, exist_ok=True)
+            for it in items:
+                if it["kind"] != "media":
+                    continue
+                p = mdir / f"{win}-row{it['i']}.png" if a.media_dir else tmpdir / f"m{it['i']}.png"
+                c = ax("capture", "--window", win, "--row", str(it["i"]), "--out", str(p), "--ocr")
+                if c.get("ok"):
+                    media_ocr[it["i"]] = {"ocr": c.get("ocr", []), "partial": c.get("partial"),
+                                          **({"image": str(p)} if a.media_dir else {})}
+                else:
+                    warnings.append({"row": it["i"], "media_capture": c.get("error")})
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    prev = None  # dates must not go backwards; a regression means an OCR misread
+    for i in sorted(dates):
+        if prev and dates[i] < prev:
+            warnings.append({"row": i, "date_ocr": "non-monotonic", "value": dates.pop(i)})
+        else:
+            prev = dates[i]
+    msgs = normalize(rows, width, dates)
+    for m in msgs:
+        if m["i"] in media_ocr:
+            m["media"] = media_ocr[m["i"]]
+    if a.close and o.get("how") != "reused":
+        ax("close", "--window", win)
+    out({"ok": True, "room": win, "opened": o.get("how"), "count": len(msgs),
+         "dates_resolved": bool(a.dates), "messages": msgs, "warnings": warnings})
+
+
+def cmd_send(a):
+    o = ax("open", *target_args(a))
+    if not o.get("ok"):
+        out(o, 1)
+    r = ax("send", "--window", o["window"], "--text", a.text, *(["--unminimize"] if a.unminimize else []))
+    r["opened"] = o.get("how")
+    if a.close and o.get("how") != "reused" and r.get("status") == "sent":
+        ax("close", "--window", o["window"])
+    out(r, 0 if r.get("ok") else 2)
+
+
+def cmd_doctor(a):
+    built = build() if binary_state() == "missing" else None
+    res = {"swiftc": bool(shutil.which("swiftc")), "binary": binary_state(), "binary_path": str(BIN)}
+    if built and not built.get("ok"):
+        res["build"] = built
+    if res["binary"] != "missing":
+        res["terminal"] = ax("check", check_binary=False)
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "probe.png"
+        r = subprocess.run(["/usr/sbin/screencapture", "-x", "-R", "0,0,4,4", str(p)], capture_output=True)
+        res["screen_recording"] = p.exists() and r.returncode == 0
+    if a.launchd:
+        res["launchd"] = launchd_probe(prompt=a.prompt)
+    ok = res["swiftc"] and res["binary"] == "current" and res.get("terminal", {}).get("ok", False)
+    out({"ok": ok, **res}, 0 if ok else 1)
+
+
+def launchd_probe(prompt: bool = False) -> dict:
+    if binary_state() != "current":
+        return {"ok": False, "error": "binary-not-current"}
+    label = LABEL_PREFIX + "probe"
+    with tempfile.TemporaryDirectory() as td:
+        log = Path(td) / "probe.json"
+        plist = AGENTS / f"{label}.plist"
+        plist.write_bytes(plistlib.dumps({"Label": label, "ProgramArguments": [str(BIN), "check", *(["--prompt"] if prompt else [])],
+                                          "RunAtLoad": True, "StandardOutPath": str(log)}))
+        uid = os.getuid()
+        subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"], capture_output=True)
+        subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(plist)], capture_output=True)
+        for _ in range(20):
+            time.sleep(0.25)
+            if log.exists() and log.read_text().strip():
+                break
+        subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"], capture_output=True)
+        plist.unlink(missing_ok=True)
+        try:
+            r = json.loads(log.read_text())
+        except Exception:
+            return {"ok": False, "error": "no-probe-output"}
+    if not r.get("trusted"):
+        r["hint"] = (f"System Settings > Privacy & Security > Accessibility > '+' > select {APP} "
+                     "(Cmd+Shift+G to paste the path) and turn it on. Required for scheduled sends.")
+        r["app"] = str(APP)
+    return r
+
+
+# ---------------------------------------------------------------- schedule
+
+def parse_duration(s: str) -> int:
+    m = re.fullmatch(r"(\d+)\s*([smhd]?)", s.strip())
+    if not m:
+        raise ValueError(f"bad duration: {s}")
+    return int(m.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)]
+
+
+def _cron_field(spec: str, lo: int, hi: int):
+    if spec == "*":
+        return None
+    vals = set()
+    for part in spec.split(","):
+        step = 1
+        if "/" in part:
+            part, st = part.split("/")
+            step = int(st)
+        if part == "*":
+            a_, b_ = lo, hi
+        elif "-" in part:
+            a_, b_ = map(int, part.split("-"))
+        else:
+            a_ = b_ = int(part)
+        if a_ < lo or b_ > hi or a_ > b_ or step < 1:
+            raise ValueError(f"cron field out of range: {spec}")
+        vals.update(range(a_, b_ + 1, step))
+    return sorted(vals)
+
+
+def cron_to_calendar(expr: str, cap: int = 200) -> list:
+    f = expr.split()
+    if len(f) != 5:
+        raise ValueError("cron needs 5 fields: minute hour day month weekday")
+    keys = [("Minute", 0, 59), ("Hour", 0, 23), ("Day", 1, 31), ("Month", 1, 12), ("Weekday", 0, 7)]
+    entries = [{}]
+    for spec, (k, lo, hi) in zip(f, keys):
+        vals = _cron_field(spec, lo, hi)
+        if vals is None:
+            continue
+        if k == "Weekday":
+            vals = sorted({v % 7 for v in vals})
+        entries = [{**e, k: v} for e in entries for v in vals]
+        if len(entries) > cap:
+            raise ValueError(f"cron expands to more than {cap} launchd entries; simplify it")
+    return entries
+
+
+def make_job(a, now: dt.datetime | None = None) -> tuple[dict, dict]:
+    now = now or dt.datetime.now().astimezone()
+    modes = [x for x in (a.at, a.every, a.cron) if x]
+    if len(modes) != 1:
+        raise ValueError("exactly one of --at / --every / --cron")
+    jid = now.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
+    label = LABEL_PREFIX + jid
+    job = {"id": jid, "label": label, "created": now.isoformat(timespec="seconds"),
+           "self": bool(a.self_chat), "room": None if a.self_chat else a.room, "text": a.text,
+           "grace_sec": parse_duration(a.grace), "allow_unread": bool(a.allow_unread),
+           "allow_activate": bool(a.activate),
+           "plist": str(AGENTS / f"{label}.plist"), "log": str(LOGS / f"{jid}.jsonl")}
+    plist = {"Label": label, "ProgramArguments": [str(BIN), "job", str(JOBS / f"{jid}.json")],
+             "StandardOutPath": str(LOGS / f"{jid}.stdout.log"), "StandardErrorPath": str(LOGS / f"{jid}.stdout.log"),
+             "ProcessType": "Interactive"}
+    if a.at:
+        when = dt.datetime.strptime(a.at, "%Y-%m-%d %H:%M").replace(tzinfo=now.tzinfo)
+        if when <= now:
+            raise ValueError("--at must be in the future")
+        job["once_at"] = when.timestamp()
+        plist["StartCalendarInterval"] = {"Month": when.month, "Day": when.day, "Hour": when.hour, "Minute": when.minute}
+    else:
+        if not (a.max_runs or a.until):
+            raise ValueError("periodic schedules need --max-runs or --until")
+        if a.every:
+            sec = parse_duration(a.every)
+            if sec < 60:
+                raise ValueError("--every must be at least 60s")
+            job["every_sec"] = sec
+            plist["StartInterval"] = sec
+        else:
+            job["cron"] = a.cron
+            job["calendar"] = cron_to_calendar(a.cron)
+            plist["StartCalendarInterval"] = job["calendar"]
+    if a.max_runs:
+        job["max_runs"] = int(a.max_runs)
+    if a.until:
+        job["until"] = dt.datetime.strptime(a.until, "%Y-%m-%d %H:%M").replace(tzinfo=now.tzinfo).timestamp()
+    return job, plist
+
+
+def cmd_schedule(a):
+    uid = os.getuid()
+    if a.sub == "add":
+        if not a.self_chat and not a.room:
+            out({"ok": False, "error": "need --room or --self"}, 64)
+        try:
+            job, plist = make_job(a)
+        except ValueError as e:
+            out({"ok": False, "error": str(e)}, 64)
+        if a.dry_run:
+            out({"ok": True, "dry_run": True, "job": job, "plist": plist})
+        if binary_state() != "current":
+            out({"ok": False, "error": "binary-not-current", "hint": "Run `kakaotalk build` then `doctor --launchd`."}, 1)
+        probe = launchd_probe()  # a job registered without this would only log accessibility failures
+        if not probe.get("trusted"):
+            out({"ok": False, "error": "launchd-not-trusted", "probe": probe}, 1)
+        JOBS.mkdir(parents=True, exist_ok=True)
+        LOGS.mkdir(parents=True, exist_ok=True)
+        AGENTS.mkdir(parents=True, exist_ok=True)
+        jp = JOBS / f"{job['id']}.json"
+        jp.write_text(json.dumps(job, ensure_ascii=False, indent=2))
+        os.chmod(jp, 0o600)
+        Path(job["plist"]).write_bytes(plistlib.dumps(plist))
+        r = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", job["plist"]], capture_output=True, text=True)
+        if r.returncode != 0:
+            jp.unlink(missing_ok=True)
+            Path(job["plist"]).unlink(missing_ok=True)
+            out({"ok": False, "error": "launchctl-bootstrap-failed", "stderr": r.stderr}, 1)
+        out({"ok": True, "id": job["id"], "label": job["label"], "job": str(jp), "log": job["log"],
+             "note": "Runs only if the binary has Accessibility (doctor --launchd)."})
+    if a.sub == "list":
+        loaded = subprocess.run(["launchctl", "list"], capture_output=True, text=True).stdout
+        jobs = []
+        for jp in sorted(JOBS.glob("*.json")):
+            if jp.name.endswith(".state.json"):
+                continue
+            j = json.loads(jp.read_text())
+            sp = jp.with_name(jp.stem + ".state.json")
+            st = json.loads(sp.read_text()) if sp.exists() else {}
+            jobs.append({"id": j["id"], "target": "self" if j["self"] else j["room"], "text": j["text"],
+                         "schedule": j.get("cron") or (f"every {j['every_sec']}s" if j.get("every_sec") else
+                                                         dt.datetime.fromtimestamp(j["once_at"]).isoformat(timespec="minutes")),
+                         "max_runs": j.get("max_runs"), "runs": st.get("runs", 0), "last_status": st.get("last_status"),
+                         "loaded": j["label"] in loaded})
+        orphans = sorted(p.name for p in AGENTS.glob(LABEL_PREFIX + "*.plist")
+                         if not (JOBS / (p.name[len(LABEL_PREFIX):-len(".plist")] + ".json")).exists())
+        out({"ok": True, "jobs": jobs, "orphan_plists": orphans})
+    if a.sub == "remove":
+        ids = [p.stem for p in JOBS.glob("*.json") if not p.name.endswith(".state.json")] if a.all else [a.id]
+        done = []
+        for jid in ids:
+            label = LABEL_PREFIX + jid
+            subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"], capture_output=True)
+            for p in (AGENTS / f"{label}.plist", JOBS / f"{jid}.json", JOBS / f"{jid}.state.json"):
+                p.unlink(missing_ok=True)
+            done.append(jid)
+        out({"ok": True, "removed": done})
+    if a.sub == "logs":
+        p = LOGS / f"{a.id}.jsonl"
+        lines = [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
+        out({"ok": True, "id": a.id, "events": lines})
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="kakaotalk", description=__doc__.splitlines()[0])
+    sp = ap.add_subparsers(dest="cmd", required=True)
+
+    def target(p):
+        g = p.add_mutually_exclusive_group(required=True)
+        g.add_argument("--room", help="exact chat room name as shown in the chat list")
+        g.add_argument("--self", dest="self_chat", action="store_true", help="my own chat (나와의 채팅)")
+        p.add_argument("--allow-unread", action="store_true", help="allow opening a room with unread messages (marks them read)")
+        p.add_argument("--activate", action="store_true", help="if background open fails, briefly bring KakaoTalk to front")
+
+    p = sp.add_parser("build"); p.add_argument("--force", action="store_true")
+    p = sp.add_parser("doctor"); p.add_argument("--launchd", action="store_true", help="also probe Accessibility under launchd")
+    p.add_argument("--prompt", action="store_true", help="with --launchd: show the macOS permission request (adds the binary to the Accessibility list)")
+    sp.add_parser("rooms")
+    p = sp.add_parser("read"); target(p)
+    p.add_argument("--pages", type=int, default=1, help="1 = what is loaded; each extra page loads ~50 older rows")
+    p.add_argument("--dates", action="store_true", help="OCR date separators (window must be on screen)")
+    p.add_argument("--media", action="store_true", help="capture + OCR media rows")
+    p.add_argument("--media-dir", help="keep media crops here (explicit file write)")
+    p.add_argument("--close", action="store_true", help="close the room window afterwards if this command opened it")
+    p = sp.add_parser("send"); target(p)
+    p.add_argument("--text", required=True)
+    p.add_argument("--unminimize", action="store_true")
+    p.add_argument("--close", action="store_true")
+    p = sp.add_parser("normalize", help="offline: normalize a saved `rows` JSON")
+    p.add_argument("rows_json")
+    p = sp.add_parser("schedule")
+    ssp = p.add_subparsers(dest="sub", required=True)
+    q = ssp.add_parser("add"); target(q)
+    q.add_argument("--text", required=True)
+    q.add_argument("--at", help="'YYYY-MM-DD HH:MM' local, one-shot")
+    q.add_argument("--every", help="interval, e.g. 30m, 2h (>= 60s)")
+    q.add_argument("--cron", help="'min hour day month weekday'")
+    q.add_argument("--max-runs", type=int)
+    q.add_argument("--until", help="'YYYY-MM-DD HH:MM' local")
+    q.add_argument("--grace", default="10m", help="max lateness for --at/--cron fires (default 10m)")
+    q.add_argument("--dry-run", action="store_true")
+    ssp.add_parser("list")
+    q = ssp.add_parser("remove"); g = q.add_mutually_exclusive_group(required=True)
+    g.add_argument("id", nargs="?"); g.add_argument("--all", action="store_true")
+    q = ssp.add_parser("logs"); q.add_argument("id")
+    a = ap.parse_args()
+
+    if a.cmd == "build":
+        r = build(a.force); out(r, 0 if r["ok"] else 1)
+    if a.cmd == "doctor":
+        cmd_doctor(a)
+    if a.cmd == "rooms":
+        r = ax("rooms"); out(r, 0 if r.get("ok") else 1)
+    if a.cmd == "read":
+        cmd_read(a)
+    if a.cmd == "send":
+        cmd_send(a)
+    if a.cmd == "normalize":
+        raw = json.loads(Path(a.rows_json).read_text())
+        out({"ok": True, "messages": normalize(raw["rows"], raw["window_width"], {int(k): v for k, v in raw.get("dates", {}).items()})})
+    if a.cmd == "schedule":
+        cmd_schedule(a)
+
+
+if __name__ == "__main__":
+    main()

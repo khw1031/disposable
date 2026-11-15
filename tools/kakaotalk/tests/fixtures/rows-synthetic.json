@@ -1,0 +1,278 @@
+{
+ "_comment": "Synthetic `kakaotalk-ax rows` output (no real conversation). window_width 380.",
+ "window_width": 380,
+ "dates": {
+  "0": "2026-01-02"
+ },
+ "rows": [
+  {
+   "i": 0,
+   "h": 36,
+   "visible": false,
+   "elements": [
+    {
+     "role": "AXButton",
+     "x": 106,
+     "w": 168,
+     "h": 28
+    }
+   ]
+  },
+  {
+   "i": 1,
+   "h": 65,
+   "visible": false,
+   "elements": [
+    {
+     "role": "AXButton",
+     "desc": "프로필",
+     "x": 10,
+     "w": 40,
+     "h": 40
+    },
+    {
+     "role": "AXStaticText",
+     "value": "오전 9:05",
+     "x": 130,
+     "w": 50,
+     "h": 14
+    },
+    {
+     "role": "AXStaticText",
+     "value": "앨리스",
+     "x": 60,
+     "w": 40,
+     "h": 16
+    },
+    {
+     "role": "AXImage",
+     "x": 55,
+     "w": 8,
+     "h": 10
+    },
+    {
+     "role": "AXTextArea",
+     "value": "안녕하세요",
+     "x": 60,
+     "w": 70,
+     "h": 20
+    }
+   ]
+  },
+  {
+   "i": 2,
+   "h": 36,
+   "visible": false,
+   "elements": [
+    {
+     "role": "AXImage",
+     "x": 55,
+     "w": 8,
+     "h": 10
+    },
+    {
+     "role": "AXTextArea",
+     "value": "회의 몇 시죠?",
+     "x": 60,
+     "w": 90,
+     "h": 20
+    }
+   ]
+  },
+  {
+   "i": 3,
+   "h": 36,
+   "visible": false,
+   "elements": [
+    {
+     "role": "AXStaticText",
+     "value": "오전 9:06",
+     "x": 160,
+     "w": 50,
+     "h": 14
+    },
+    {
+     "role": "AXImage",
+     "x": 55,
+     "w": 8,
+     "h": 10
+    },
+    {
+     "role": "AXTextArea",
+     "value": "자료도 부탁해요",
+     "x": 60,
+     "w": 95,
+     "h": 20
+    }
+   ]
+  },
+  {
+   "i": 4,
+   "h": 41,
+   "visible": true,
+   "elements": [
+    {
+     "role": "AXStaticText",
+     "value": "오후 1:30",
+     "x": 200,
+     "w": 50,
+     "h": 14
+    },
+    {
+     "role": "AXButton",
+     "desc": "공유",
+     "x": 180,
+     "w": 20,
+     "h": 20
+    },
+    {
+     "role": "AXImage",
+     "x": 360,
+     "w": 8,
+     "h": 10
+    },
+    {
+     "role": "AXTextArea",
+     "value": "2시에 봬요",
+     "x": 260,
+     "w": 102,
+     "h": 20
+    }
+   ]
+  },
+  {
+   "i": 5,
+   "h": 36,
+   "visible": true,
+   "elements": [
+    {
+     "role": "AXTextArea",
+     "value": "메시지가 삭제되었습니다.",
+     "x": 120,
+     "w": 140,
+     "h": 20
+    }
+   ]
+  },
+  {
+   "i": 6,
+   "h": 65,
+   "visible": true,
+   "elements": [
+    {
+     "role": "AXButton",
+     "desc": "프로필",
+     "x": 10,
+     "w": 40,
+     "h": 40
+    },
+    {
+     "role": "AXStaticText",
+     "value": "오후 2:01",
+     "x": 260,
+     "w": 50,
+     "h": 14
+    },
+    {
+     "role": "AXStaticText",
+     "value": "밥",
+     "x": 60,
+     "w": 20,
+     "h": 16
+    },
+    {
+     "role": "AXImage",
+     "x": 60,
+     "w": 200,
+     "h": 150
+    }
+   ]
+  },
+  {
+   "i": 7,
+   "h": 120,
+   "visible": true,
+   "elements": [
+    {
+     "role": "AXStaticText",
+     "value": "오후 11:59",
+     "x": 100,
+     "w": 50,
+     "h": 14
+    },
+    {
+     "role": "AXButton",
+     "desc": "공유",
+     "x": 80,
+     "w": 20,
+     "h": 20
+    },
+    {
+     "role": "AXImage",
+     "x": 360,
+     "w": 8,
+     "h": 10
+    },
+    {
+     "role": "AXTextArea",
+     "value": "https://example.com/a",
+     "x": 170,
+     "w": 192,
+     "h": 20
+    },
+    {
+     "role": "AXTextArea",
+     "value": "Example title",
+     "x": 170,
+     "w": 192,
+     "h": 20
+    },
+    {
+     "role": "AXTextArea",
+     "value": "example.com",
+     "x": 170,
+     "w": 192,
+     "h": 20
+    }
+   ]
+  },
+  {
+   "i": 8,
+   "h": 36,
+   "visible": true,
+   "elements": [
+    {
+     "role": "AXButton",
+     "x": 140,
+     "w": 20,
+     "h": 20
+    },
+    {
+     "role": "AXButton",
+     "x": 162,
+     "w": 20,
+     "h": 20
+    },
+    {
+     "role": "AXImage",
+     "x": 360,
+     "w": 8,
+     "h": 10
+    },
+    {
+     "role": "AXTextArea",
+     "value": "실패한 메시지",
+     "x": 260,
+     "w": 102,
+     "h": 20
+    }
+   ]
+  },
+  {
+   "i": 9,
+   "h": 15,
+   "visible": true,
+   "elements": []
+  }
+ ]
+}
