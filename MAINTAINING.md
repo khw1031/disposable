@@ -39,6 +39,14 @@ The team may import a skill from another public GitHub repository that no one he
 3. Open the pull request from the team account; the check refuses `imported` from anyone else. One pull request may import several tools. For each, give the source at its pinned commit, the license and why it was picked (for example, its skills.sh rank).
 4. After the index is published, open each tool on the site: it must be listed (not held) and marked Imported.
 
+### Updating imports
+
+Every Monday, and on demand from the Actions tab, **Update imports** checks each imported tool against the default branch of its original. A tool moves to the newest commit only when its own folder changed, the index build check passes there with no risk signal, and its license is the same. All moves go into one pull request from the branch `update-imports`, opened by the team account, with a link to each change. Read the changes and merge it like any pull request; until then the site keeps showing and installing the reviewed versions.
+
+Anything else stays at its reviewed commit and is listed for a person: a folder that is gone, a new risk signal, a `SKILL.md` the index would hold, a different license, or a source that could not be read. Fix those by hand (move it with a `reviewed.json` entry, point it at the new folder, or remove the tool). When nothing moved but something is listed, the run fails so the team is notified.
+
+The pull request needs the repository secret `IMPORT_UPDATE_TOKEN`: a fine-grained personal access token of a team account, limited to this repository, with Contents and Pull requests set to read and write. The workflow's own token cannot open it, because a pull request opened with that token does not run the required checks. Renew the secret before the token expires. To try it locally: `node .github/scripts/update-imports.mjs` (set `GITHUB_TOKEN` to stay within GitHub's API limit); it rewrites `source_commit` in place and prints the same summary.
+
 ## Clearing a held tool
 
 A tool with a risk signal stays off the site until it is reviewed. Review it before merging, so it appears as soon as it merges:
