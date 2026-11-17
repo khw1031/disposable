@@ -1,0 +1,54 @@
+name: Update imports
+# Moves imported tools to the newest commit of their original when their folder changed, in one pull request for the
+# team to read and merge (MAINTAINING.md, Updating imports). Nothing from a source is run.
+on:
+  schedule:
+    - cron: '0 0 * * 1' # Mondays 00:00 UTC (09:00 KST)
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: update-imports
+  cancel-in-progress: false
+jobs:
+  update:
+    if: github.repository == 'x-ify/disposable' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Move imports whose original changed
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/update-imports.mjs --body "$RUNNER_TEMP/body.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Open or update the pull request
+        if: steps.check.outputs.moved != '0'
+        env:
+          # A team account's token. A pull request opened with the workflow's own token would not run the required
+          # checks, and the check accepts changes to tools/ only from a maintainer or the team.
+          GH_TOKEN: ${{ secrets.IMPORT_UPDATE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "::error::Set the IMPORT_UPDATE_TOKEN secret (MAINTAINING.md, Updating imports). The updates are in this run's summary."; exit 1; fi
+          login=$(gh api user --jq .login); id=$(gh api user --jq .id)
+          git config user.name "$login"; git config user.email "$id+$login@users.noreply.github.com"
+          gh auth setup-git
+          git switch -c update-imports
+          git commit -qam "Move imported tools to the newest commit of their original"
+          git push --force origin update-imports
+          if [ -n "$(gh pr list --head update-imports --state open --json number --jq '.[].number')" ]; then
+            gh pr edit update-imports --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --base main --head update-imports --title "Move imported tools to the newest commit of their original" --body-file "$RUNNER_TEMP/body.md"
+          fi
+      - name: Ask a person when only reports remain
+        if: steps.check.outputs.moved == '0' && steps.check.outputs.reported != '0'
+        run: |
+          echo "::error::Some imported tools need a person; see this run's summary."
+          exit 1

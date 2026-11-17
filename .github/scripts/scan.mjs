@@ -1,7 +1,7 @@
 // Build-time source checks. The text rules live in the Disposable skill's checker, the single source shared with pull request checks.
 import { scanText, githubRepo, isRuleFile, RULES_VERSION } from '../../skills/disposable/scripts/check.mjs';
 export { scanText };
-async function bounded(fetchImpl, url, accept = 'application/vnd.github+json') {
+export async function bounded(fetchImpl, url, accept = 'application/vnd.github+json') {
  // The publish workflow passes its token so many external sources fit GitHub's API limit; only api.github.com gets it.
  const token=url.startsWith('https://api.github.com/') && globalThis.process?.env?.GITHUB_TOKEN;
  const response = await fetchImpl(url, { redirect:'error', headers:{Accept:accept,'User-Agent':'Disposable-source-check/0.1',...(token?{Authorization:`Bearer ${token}`}:{})}, signal:AbortSignal.timeout(8000) });
