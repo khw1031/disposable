@@ -23,7 +23,7 @@ The repository's pull request check enforces everything below. The site only sho
 - `<slug>`: lowercase letters, digits and single hyphens, up to 60 characters. It never changes after merge.
 - Up to 100 files and 1 MiB in total. Text files must be UTF-8.
 - Up to 3 images (`.png`, `.jpg`, `.jpeg`, `.webp`), each up to 1 MiB. SVG is not accepted.
-- An optional `thumbnail.png` at the root of the folder, up to 256 KiB, replaces the preset picture on the site. Make it square; the site shows it at about 100 pixels. Only PNG: GitHub, where the site loads it from, serves other image types in a way browsers do not show.
+- An optional `thumbnail.png` at the root of the folder, up to 256 KiB, replaces the picture on the site: the GitHub profile picture in the tool list (the original owner's for an imported tool, else the first maintainer's) and the preset picture on the tool page. Make it square; the site shows it at about 100 pixels. Only PNG: GitHub, where the site loads it from, serves other image types in a way browsers do not show.
 - No hidden files or folders (names starting with `.`). The pull request check rejects them.
 - No executables, libraries or archives. Large or compiled programs stay in their own GitHub repository and are linked with `source`.
 
@@ -61,7 +61,7 @@ Flat `key: value` lines between `---` markers. Lists are comma separated. A skil
 | `source` | no | `https://github.com/owner/repo` for code or a skill kept elsewhere |
 | `source_path` | no | Folder inside `source` |
 | `source_commit` | with `source` | Full 40-character commit SHA that was reviewed |
-| `art` | no | Preset picture when there is no `thumbnail.png`: `files`, `table`, `draw`, `notes`, `timer` or `text`. Left out, the site picks one from the slug |
+| `art` | no | Preset picture on the tool page when there is no `thumbnail.png`: `files`, `table`, `draw`, `notes`, `timer` or `text`. Left out, the site picks one from the slug |
 | `imported` | no | `yes` when the person sharing does not use the tool and only links its original with `source`. Only the Disposable team imports ([MAINTAINING.md](https://github.com/x-ify/disposable/blob/main/MAINTAINING.md#importing-a-tool-nobody-here-uses)); the site marks the tool Imported |
 | `title_<lang>`, `summary_<lang>` | no | The title and summary in another site language, written or approved by the maker. `<lang>` is `en`, `ko`, `ja`, `zh_hans` or `zh_hant`, never the original `language`; up to 100 and 240 characters. The site shows them in that language and marks them as translations. Nothing is translated automatically |
 
