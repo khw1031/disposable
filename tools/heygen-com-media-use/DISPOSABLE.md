@@ -2,7 +2,7 @@
 type: skill
 source: https://github.com/heygen-com/hyperframes
 source_path: skills/media-use
-source_commit: 7b27fbc84ab3134f3d86b0e6baee7f55554965d6
+source_commit: 3599623f9285272af4842513d38c0fb57fcc0b4e
 license: Apache-2.0
 maintainers: x-ify
 added: 2026-11-17
