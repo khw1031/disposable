@@ -202,6 +202,18 @@ test('an optional thumbnail is thumbnail.png at the folder root, up to 256 KiB',
   assert.deepEqual(await problemsFor(t, { 'DISPOSABLE.md': doc(), 'images/thumbnail.jpg': png(4000) }), [], 'only the root name is reserved');
 });
 
+test('an import links an original kept elsewhere and says so with imported: yes', async t => {
+  assert.deepEqual(await problemsFor(t, { 'DISPOSABLE.md': registration({ ...external, imported: 'yes', origin: 'https://skills.sh/example/skills/receipts' }) }), [], 'an external skill');
+  assert.ok((await problemsFor(t, { 'DISPOSABLE.md': registration({ ...external, imported: 'no' }) })).includes('imported must be yes, or left out'));
+  assert.ok((await problemsFor(t, { 'DISPOSABLE.md': registration({ imported: 'yes' }), 'SKILL.md': skillDoc() })).some(p => p.startsWith('imported needs source')), 'a copied folder is not an import');
+  const sha = 'c'.repeat(40);
+  const fake = async url => String(url).includes('/commits/') ? Response.json({ sha }) : String(url).includes('/contents/') ? Response.json([{ name: 'SKILL.md', type: 'file', path: 'skills/receipts/SKILL.md', size: 300 }]) : new Response(skillDoc());
+  const dir = await registry(t, { borrowed: { 'DISPOSABLE.md': registration({ ...external, imported: 'yes' }) }, own: { 'DISPOSABLE.md': registration(external) } });
+  const [borrowed, own] = (await build(dir, fake, { repo: 'x-ify/disposable', commit: 'd'.repeat(40) })).tools;
+  assert.equal(borrowed.data.imported, true); assert.equal('imported' in own.data, false);
+  assert.equal(borrowed.scan.status, 'partial', 'an import is checked like any external skill');
+});
+
 test('the index derives a skill entry from SKILL.md and pins its install link', async t => {
   const sha = 'c'.repeat(40), commit = 'd'.repeat(40), calls = [];
   const long = 'Step.\n'.repeat(4000);
@@ -418,6 +430,10 @@ test('the pull request check enforces maintainers, scope and format using the ba
   assert.deepEqual(r.problems, ['tools/rules: hidden files are not accepted: .cursor/rules/a.mdc, .env. Remove them, or rename them or their folder without the leading dot']);
   // A skill registration by its own maintainer passes; it needs no title, summary or sections.
   assert.deepEqual((await prCheck({ base, head: await head({ ...same, imported: { 'DISPOSABLE.md': registration({ ...external, maintainers: 'new-maker' }) } }), author: 'new-maker' })).problems, []);
+  // Only the team imports a tool its publisher does not use.
+  const borrowed = { ...same, borrowed: { 'DISPOSABLE.md': registration({ ...external, imported: 'yes', maintainers: 'new-maker' }) } };
+  assert.ok((await prCheck({ base, head: await head(borrowed), author: 'new-maker' })).problems.some(p => p.startsWith('tools/borrowed: only the Disposable team imports')));
+  assert.deepEqual((await prCheck({ base, head: await head({ ...same, borrowed: { 'DISPOSABLE.md': registration({ ...external, imported: 'yes', maintainers: 'disposable-team' }) } }), author: 'disposable-team' })).problems, []);
   // Removing a tool also needs a maintainer.
   assert.ok((await prCheck({ base, head: await head({ other: { 'DISPOSABLE.md': doc({ maintainers: 'stranger' }) } }), author: 'stranger' })).problems.some(p => p.includes('tools/receipts') && p.includes('maintainers')));
 });

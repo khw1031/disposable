@@ -2,7 +2,9 @@
 import { scanText, githubRepo, isRuleFile, RULES_VERSION } from '../../skills/disposable/scripts/check.mjs';
 export { scanText };
 async function bounded(fetchImpl, url, accept = 'application/vnd.github+json') {
- const response = await fetchImpl(url, { redirect:'error', headers:{Accept:accept,'User-Agent':'Disposable-source-check/0.1'}, signal:AbortSignal.timeout(8000) });
+ // The publish workflow passes its token so many external sources fit GitHub's API limit; only api.github.com gets it.
+ const token=url.startsWith('https://api.github.com/') && globalThis.process?.env?.GITHUB_TOKEN;
+ const response = await fetchImpl(url, { redirect:'error', headers:{Accept:accept,'User-Agent':'Disposable-source-check/0.1',...(token?{Authorization:`Bearer ${token}`}:{})}, signal:AbortSignal.timeout(8000) });
  if (!response.ok) throw new Error('source-unavailable');
  const reader = response.body.getReader(); let size=0; const parts=[];
  while (true) { const {done,value}=await reader.read(); if(done) break; size+=value.length; if(size>350000) {await reader.cancel();throw new Error('source-limit');} parts.push(value); }
@@ -18,7 +20,8 @@ export async function inspect(data, fetchImpl = globalThis.fetch, { onFile = () 
    const repo=githubRepo(data.sourceUrl);
    if(!repo || !/^[0-9a-f]{40}$/.test(data.sourceRef || '')) {report.sourceError=true;report.sourceProblem='source needs a GitHub repository and a full source_commit';} else try {
      const api=`https://api.github.com/repos/${repo.owner}/${repo.repo}`;
-     const commit=JSON.parse(await bounded(fetchImpl, `${api}/commits/${encodeURIComponent(data.sourceRef)}`));
+     // git/commits has no file diff, which for a large commit outgrows the read limit (repos/…/commits does).
+     const commit=JSON.parse(await bounded(fetchImpl, `${api}/git/commits/${encodeURIComponent(data.sourceRef)}`));
      if(commit.sha !== data.sourceRef) throw new Error('invalid-sha');
      report.commit=commit.sha;
      report.sourceURL=`${repo.url}/tree/${commit.sha}${data.sourcePath?'/'+data.sourcePath.split('/').map(encodeURIComponent).join('/'):''}`;

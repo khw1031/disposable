@@ -45,7 +45,7 @@ export function typeEvidence(files) {
   return { type: 'recipe', path: '' };
 }
 export const SECTIONS = { 'Result': 'example', 'Before you start': 'requirements', 'Quick start': 'steps', 'Rebuild': 'rebuild', 'Limits': 'limits' };
-const FIELDS = ['title', 'summary', 'type', 'mode', 'device', 'language', 'license', 'maintainers', 'author', 'added', 'cost', 'support', 'tags', 'origin', 'live', 'source', 'source_path', 'source_commit', 'art'];
+const FIELDS = ['title', 'summary', 'type', 'mode', 'device', 'language', 'license', 'maintainers', 'author', 'added', 'cost', 'support', 'tags', 'origin', 'live', 'source', 'source_path', 'source_commit', 'art', 'imported'];
 const REQUIRED = ['title', 'summary', 'type', 'mode', 'device', 'language', 'license', 'maintainers', 'author', 'added'];
 // Every tool except a skill needs these sections; the others are optional (FORMAT.md, Sections).
 const REQUIRED_SECTIONS = ['steps', 'rebuild'];
@@ -213,6 +213,9 @@ export function validateTool(slug, parsed, files, today = new Date().toISOString
   if (m.source && !githubRepo(m.source)) problems.push('source must be https://github.com/owner/repo');
   if (m.source && !/^[0-9a-f]{40}$/.test(m.source_commit || '')) problems.push('source needs source_commit: the full 40-character commit SHA');
   if (!m.source && (m.source_path || m.source_commit)) problems.push('source_path and source_commit need source');
+  // An import is shared by someone who does not use it; it links work kept elsewhere and the site marks it (FORMAT.md).
+  if (m.imported && m.imported !== 'yes') problems.push('imported must be yes, or left out');
+  if (m.imported && !m.source) problems.push('imported needs source: an import links the original kept in another repository');
   if (m.source_path && (m.source_path.split('/').some(v => !v || v === '..' || v === '.') || m.source_path.startsWith('/') || /[\\?#\x00-\x1f]/.test(m.source_path))) problems.push('source_path must be a plain relative folder');
   let bytes = 0, images = 0;
   for (const f of files) {

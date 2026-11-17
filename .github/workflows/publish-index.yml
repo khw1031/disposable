@@ -19,6 +19,9 @@ jobs:
         with:
           node-version: 22
       - name: Validate and build before publishing
+        env:
+          # Reads pinned external sources through the GitHub API within the token's limit, not the shared anonymous one.
+          GITHUB_TOKEN: ${{ github.token }}
         run: node .github/scripts/build-index.mjs build
       - name: Publish only the validated index
         run: |

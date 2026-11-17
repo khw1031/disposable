@@ -50,7 +50,7 @@ Nothing from the source is run. Read files with `gh api` only.
 4. **Read `SKILL.md` in full**: `gh api "repos/<owner>/<repo>/contents/<source_path>/SKILL.md?ref=<sha>" -H "Accept: application/vnd.github.raw"` (`contents/SKILL.md` at the repository root), saved into a new temporary folder. Run the checker in `scan` mode on it and read it yourself, as in use steps 2–3. If `name` or `description` does not follow the format, stop: the index would hold the skill, and you must not change someone else's file.
 5. **License.** If the skill folder has its own license file, or `SKILL.md` has a `license` value, those terms apply: continue only if they are exactly one of `CC0-1.0`, `CC-BY-4.0`, `MIT` or `Apache-2.0`. Otherwise use `gh api repos/<owner>/<repo>/license --jq .license.spdx_id`. Anything else (`NOASSERTION`, `GPL-3.0`, "Proprietary", "see LICENSE.txt" with other terms, no license): stop and explain that Disposable cannot redistribute it.
 6. **Author and origin.** `author` is the original author: `metadata.author` in `SKILL.md` if present, otherwise `gh api users/<owner> --jq '.name // .login'`. `origin` is the link the person gave.
-7. **Confirm use.** Ask whether they actually use this skill and how. An Open Disposable is something its sharer uses; if they do not, stop.
+7. **Confirm use.** Ask whether they actually use this skill and how. An Open Disposable is something its sharer uses; if they do not, stop. Only the Disposable team imports a skill nobody here uses, with `imported: yes` (MAINTAINING.md).
 8. **Slug.** Use `name`. If `tools/<name>` exists in `<repo>`, use `<owner>-<name>` (up to 60 characters) and tell the person.
 9. Write only the registration; copy no files from the source.
 

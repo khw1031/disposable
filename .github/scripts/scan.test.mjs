@@ -37,3 +37,16 @@ test('source inspection refuses unpinned or mismatched revisions and oversized b
  const oversized=async url=>String(url).includes('/commits/')?new Response('x'.repeat(350001)):new Response('');
  assert.equal((await inspect(data,oversized)).status,'held');
 });
+
+test('the commit is read without its file diff, and only GitHub API requests carry the workflow token', async t => {
+ const sha='a'.repeat(40), seen=[], data={type:'skill',sourceUrl:'https://github.com/example/project',sourcePath:'skills/one',sourceRef:sha};
+ const fake=async(url,options)=>{seen.push([String(url),options.headers.Authorization]);return String(url).includes('/commits/')?Response.json({sha}):String(url).includes('/contents/')?Response.json([{name:'SKILL.md',type:'file',path:'skills/one/SKILL.md',size:40}]):new Response('---\nname: one\n---\nSafe.');};
+ const saved=process.env.GITHUB_TOKEN;delete process.env.GITHUB_TOKEN; // the workflow sets it
+ t.after(()=>{if(saved===undefined)delete process.env.GITHUB_TOKEN;else process.env.GITHUB_TOKEN=saved;});
+ assert.equal((await inspect(data,fake)).status,'partial');
+ assert.equal(seen[0][0],`https://api.github.com/repos/example/project/git/commits/${sha}`);
+ assert.ok(seen.every(([,auth])=>auth===undefined),'no token, no header');
+ seen.length=0;process.env.GITHUB_TOKEN='test-token';
+ await inspect(data,fake);
+ assert.deepEqual(seen.map(([url,auth])=>[new URL(url).host,auth]),[['api.github.com','Bearer test-token'],['api.github.com','Bearer test-token'],['raw.githubusercontent.com',undefined]]);
+});
