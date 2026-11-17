@@ -51,6 +51,8 @@ export async function prCheck({ base, head, author }) {
       problems.push(`tools/${slug}: add your GitHub login (${author}) to maintainers`);
     }
     if (removed) { notes.push(`tools/${slug} is removed. It stays in git history.`); continue; }
+    // Only the team imports a tool nobody here uses; everyone else shares what they use (MAINTAINING.md, Imports).
+    if (next?.imported && !isTeam) problems.push(`tools/${slug}: only the Disposable team imports a tool its publisher does not use (imported: yes); share tools you use without it`);
     const result = await checkFolder(join(head, 'tools', slug));
     for (const p of result.problems) problems.push(`tools/${slug}: ${p}`);
     for (const f of result.findings) notes.push(`tools/${slug}: risk signal ${f}. After merge the tool stays off the site until the team records a review in reviewed.json.`);

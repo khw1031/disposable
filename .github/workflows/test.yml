@@ -20,3 +20,7 @@ jobs:
         with:
           node-version: 22
       - run: node --test .github/scripts/*.test.mjs
+        env:
+          # The canonical-registry test builds the real index twice; with many external sources the shared
+          # anonymous API limit would run out between the builds. Read-only, and forks never get here.
+          GITHUB_TOKEN: ${{ github.token }}

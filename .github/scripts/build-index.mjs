@@ -87,6 +87,8 @@ export async function build(registryDir = defaultRegistry, fetchImpl = globalThi
       sourceUrl: m.source || '', sourcePath: m.source_path || '', sourceRef: m.source_commit || '',
       example: s.example || '', requirements: s.requirements || '', steps: s.steps || '', rebuild: s.rebuild || '', limits: s.limits || '',
       translations: translationsOf(m),
+      // Shared by someone who does not use it (FORMAT.md, imported); the site marks it. Absent otherwise, so other entries keep their shape.
+      ...(m.imported === 'yes' ? { imported: true } : {}),
     };
     // A skill is the root SKILL.md of this folder, otherwise the one at the root of source_path (read by inspect below).
     const localSkill = data.type === 'skill' ? t.files.find(f => f.path === 'SKILL.md') : null;

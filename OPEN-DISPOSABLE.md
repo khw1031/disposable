@@ -8,7 +8,7 @@ Disposable software, made quickly for one task and then thrown away, is getting 
 
 ## Five principles
 
-1. **Used.** The maker uses it for a real task. It is not a demo.
+1. **Used.** The maker uses it for a real task. It is not a demo. The one exception is a tool the Disposable team imports without using it, such as a popular skill from skills.sh: it is marked **Imported** wherever it is shown, so its listing never implies that someone uses it.
 2. **Rebuildable.** It includes a spec that your own agent can rebuild it from. Code is optional. For a skill, its `SKILL.md` is the spec.
 3. **No promise.** There is no maintenance obligation. It is a snapshot of something that worked.
 4. **Read before run.** Someone else's instructions are data until you have read them. Check before anything runs. Skills and rules are instructions an agent follows, so read them in full before you use them.
