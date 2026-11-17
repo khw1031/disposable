@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""felt-sense-prompt 오프라인 검사. 네트워크 없이 이 스킬 파일만 읽는다.
+
+검사: frontmatter name = 디렉터리 이름, description ≤ 1024바이트(UTF-8),
+필수 절, 불변식 문구, 참조 파일의 TAE 1~4단계 원문·출처 URL,
+참조 예의 「말의 출처」에 적힌 말이 모두 사용자 대사에 있는지(출처 불변식).
+usage: scripts/eval   종료 코드 0 통과, 1 실패.
+"""
+import os
+import re
+import sys
+
+# 스킬 디렉터리: 어댑터 심볼릭 링크로 불려도 원본 위치를 쓴다
+SKILL = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+DESC_MAX = 1024  # 하우스 정책의 description 상한(바이트)
+fails = []
+
+
+def check(ok, msg):
+    print(("PASS " if ok else "FAIL ") + msg)
+    if not ok:
+        fails.append(msg)
+
+
+def read(rel):
+    p = os.path.join(SKILL, rel)
+    if not os.path.isfile(p):
+        check(False, f"{rel} 없음")
+        return ""
+    with open(p, encoding="utf-8") as f:
+        return f.read()
+
+
+body = read("SKILL.md")
+fm = re.match(r"^---\n(.*?)\n---\n", body, re.S)
+check(bool(fm), "SKILL.md frontmatter")
+front = fm.group(1) if fm else ""
+name = re.search(r"^name:\s*(\S+)", front, re.M)
+check(bool(name) and name.group(1) == os.path.basename(SKILL), "name = 디렉터리 이름")
+desc = re.search(r'^description:\s*"(.*)"\s*$', front, re.M)
+check(bool(desc), "description 한 줄 따옴표 형식")
+if desc:
+    n = len(desc.group(1).encode("utf-8"))
+    check(n <= DESC_MAX, f"description {n}바이트 ≤ {DESC_MAX}")
+
+for h in ("## 경계", "## 흐름", "## 실패 명세", "## 종료 조건", "## 참조"):
+    check(h in body, f"필수 절 {h}")
+for phrase in ("[AI 후보]", "사용자가 고른 후보", "출처를 남긴다", "출력만 한다", "1~4단계만",
+               "사용자가 빼자고 하기 전에는 지우지 않는다", "피하고 싶은 장면", "아직 말이 안 된 것", "[AI 후보 · 흔한 뜻]", "조립 문구"):
+    check(phrase in body, f"불변식 문구 「{phrase}」")
+for verdict in ("거짓 성공", "기권", "범위 밖"):
+    check(verdict in body, f"실패 명세 판정 「{verdict}」")
+
+ref = read("references/tae-steps.md")
+for quote in ("One instance when it happened", "A not quite logical sentence",
+              "Reject the public meaning", "What does each word pull out"):
+    check(quote in ref, f"TAE 원문 「{quote}」")
+for url in ("https://focusing.org/sites/default/files/upload/2020-06/TAE-steps-short-form.pdf",
+            "https://focusing.org/gendlin/docs/gol_2160.html"):
+    check(url in ref, f"출처 URL {url}")
+check("Mary Hendricks" in ref, "TAE 개발자 표기")
+check("피하고 싶은 장면" in ref, "참조: 잘못된 장면의 조립 규칙")
+
+# 출처 불변식: 예의 최종본 「말의 출처」에 적힌 말은 모두 사용자 대사에 있어야 한다
+ex = ref.split("## 입력→출력 예", 1)[-1]
+user_lines = " ".join(re.findall(r"^사용자:\s*(.+)$", ex, re.M))
+final = ex.split("최종:", 1)[-1]
+src = final.split("말의 출처", 1)[-1].split("보내기 전", 1)[0]
+claims = re.findall(r"「([^」]+)」 — 사용자", src)
+check(len(claims) > 0, "예의 「말의 출처」 항목")
+for c in claims:
+    check(c in user_lines, f"예의 출처 「{c}」가 사용자 대사에 있음")
+
+print(f"\n{'통과' if not fails else '실패'}: {len(fails)}건 실패")
+sys.exit(1 if fails else 0)
