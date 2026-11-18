@@ -35,7 +35,7 @@ Flat `key: value` lines between `---` markers. Lists are comma separated. A skil
 | `device` | yes | `any`, `windows`, `mac`, `linux` or `mobile` |
 | `language` | yes | Original language: `en`, `ko`, `zh-Hans`, `zh-Hant` or `ja` |
 | `license` | yes | `CC0-1.0`, `CC-BY-4.0`, `MIT` or `Apache-2.0`. See [License](#license) |
-| `maintainers` | yes | GitHub logins allowed to change this folder. The first is shown as the publisher |
+| `maintainers` | yes | GitHub logins allowed to change this folder. The first is shown as the publisher, except for an imported tool |
 | `author` | yes | Original author or attribution, up to 100 characters |
 | `added` | yes | `YYYY-MM-DD`, set by the first pull request |
 | `cost` | no | What it may cost to use or rebuild |
@@ -47,7 +47,7 @@ Flat `key: value` lines between `---` markers. Lists are comma separated. A skil
 | `source_path` | no | Folder inside `source` |
 | `source_commit` | with `source` | Full 40-character commit SHA that was reviewed |
 | `art` | no | Preset picture on the tool page when there is no `thumbnail.png`: `files`, `table`, `draw`, `notes`, `timer` or `text`. Left out, the site picks one from the slug |
-| `imported` | no | `yes` when the person sharing does not use the tool and only links its original with `source`. Only the Disposable team imports ([MAINTAINING.md](https://github.com/x-ify/disposable/blob/main/MAINTAINING.md#importing-a-tool-nobody-here-uses)); the site marks the tool Imported |
+| `imported` | no | `yes` when the person sharing does not use the tool and only links its original with `source`. Only the Disposable team imports ([MAINTAINING.md](https://github.com/x-ify/disposable/blob/main/MAINTAINING.md#importing-a-tool-nobody-here-uses)); the site marks the tool Imported and shows the GitHub owner of `source` as its publisher |
 | `title_<lang>`, `summary_<lang>` | no | The title and summary in another site language, written or approved by the maker. `<lang>` is `en`, `ko`, `ja`, `zh_hans` or `zh_hant`, never the original `language`; up to 100 and 240 characters. The site shows them in that language and marks them as translations. Nothing is translated automatically |
 
 ## Sections

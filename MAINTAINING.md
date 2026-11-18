@@ -35,7 +35,7 @@ For the Disposable team. Contributors only need [README.md](README.md) and [FORM
 The team may import a skill from another public GitHub repository that no one here uses, such as a popular skill on [skills.sh](https://skills.sh), so people can find, read and install it here. Open Disposable's first principle is that the sharer uses the tool, so an import says so and the site marks it **Imported**.
 
 1. Follow [skills.md](skills/disposable/references/skills.md#a-skill-from-skillssh-or-github) steps 1–6 and 8–9: pin the commit, find the folder, read `SKILL.md` in full, confirm the license is one of the four, and write only the registration. Skip step 7 (use).
-2. Add `imported: yes`, list the team account first in `maintainers` (it is shown as the publisher), and set `origin` to the page the skill was picked from.
+2. Add `imported: yes`, list the team account first in `maintainers` (it maintains the folder; the site shows the GitHub owner of `source` as the publisher), and set `origin` to the page the skill was picked from.
 3. Open the pull request from the team account; the check refuses `imported` from anyone else. One pull request may import several tools. For each, give the source at its pinned commit, the license and why it was picked (for example, its skills.sh rank).
 4. After the index is published, open each tool on the site: it must be listed (not held) and marked Imported.
 
