@@ -4,6 +4,7 @@
 //   node check.mjs scan <file>                list risk signals in one file (exit 0; signals are for a person to read)
 // Both exit 2 with a message when the target cannot be read, so it is never mistaken for a format problem.
 // This file is the single source of the format rules: the Disposable repository's pull request check imports it.
+import { realpathSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve, relative, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -278,7 +279,15 @@ export async function checkFolder(dir) {
   return { files, parsed, problems, findings };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when the module at moduleUrl is the script Node was started with. Both sides are real paths: Node names a
+// symlinked script (a skill linked into an agent's folder, macOS /tmp or mktemp) by its target, so comparing the
+// typed path made the command exit 0 without checking anything.
+export function isEntry(moduleUrl) {
+  if (!process.argv[1]) return false;
+  try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(moduleUrl)); } catch { return false; }
+}
+
+if (isEntry(import.meta.url)) {
   const [command, target] = process.argv.slice(2);
   if (!['tool', 'scan'].includes(command) || !target) {
     console.error('Usage: node check.mjs tool <tools/slug folder> | scan <file>');
