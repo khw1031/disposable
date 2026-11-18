@@ -5,7 +5,7 @@
 // It only reads files from the pull request; nothing from the pull request is executed.
 import { readdir, readFile, appendFile } from 'node:fs/promises';
 import { resolve, relative, join } from 'node:path';
-import { checkFolder, parseDisposable } from '../../skills/disposable/scripts/check.mjs';
+import { checkFolder, parseDisposable, isEntry } from '../../skills/disposable/scripts/check.mjs';
 import { readTools, folderVersion } from './build-index.mjs';
 
 async function listFiles(root, dir = root) {
@@ -66,7 +66,7 @@ export async function prCheck({ base, head, author }) {
   return { changed, slugs, problems, notes, isTeam };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
+if (isEntry(import.meta.url)) {
   const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : ''; };
   const result = await prCheck({ base: resolve(arg('base')), head: resolve(arg('head')), author: arg('author') });
   const lines = [

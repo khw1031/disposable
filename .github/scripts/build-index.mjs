@@ -5,7 +5,7 @@ import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { parseDisposable, validateTool, readFolder, scanText, checkSkill, githubRepo, RULES_VERSION, TRANSLATION_LOCALES } from '../../skills/disposable/scripts/check.mjs';
+import { parseDisposable, validateTool, readFolder, scanText, checkSkill, githubRepo, RULES_VERSION, TRANSLATION_LOCALES, isEntry } from '../../skills/disposable/scripts/check.mjs';
 import { inspect } from './scan.mjs';
 export { parseDisposable };
 
@@ -140,7 +140,7 @@ export async function readReviewed(registryDir = defaultRegistry) {
 
 export const serialize = index => JSON.stringify(index, null, 1) + '\n';
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isEntry(import.meta.url)) {
   const [command, dir] = process.argv.slice(2);
   const registryDir = dir ? resolve(dir) : defaultRegistry;
   if (command === 'check') {

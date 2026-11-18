@@ -6,10 +6,9 @@
 // Anything else is reported for a person, and the tool stays at its reviewed commit (MAINTAINING.md, Updating imports).
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { readTools, defaultRegistry } from './build-index.mjs';
 import { inspect, bounded } from './scan.mjs';
-import { checkSkill, githubRepo, LICENSES } from '../../skills/disposable/scripts/check.mjs';
+import { checkSkill, githubRepo, LICENSES, isEntry } from '../../skills/disposable/scripts/check.mjs';
 
 const BRANCH = /^[A-Za-z0-9._/-]{1,200}$/;
 const segments = path => path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
@@ -104,7 +103,7 @@ export function summary({ checked, moved, reports }) {
   return lines.join('\n') + '\n';
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isEntry(import.meta.url)) {
   const args = process.argv.slice(2), at = args.indexOf('--body'), body = at >= 0 ? args.splice(at, 2)[1] : '';
   const result = await updateImports(args[0] ? resolve(args[0]) : defaultRegistry);
   const text = summary(result);
