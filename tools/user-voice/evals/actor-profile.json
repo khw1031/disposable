@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "user_id": "synthetic-video-actor",
+  "samples": [
+    {"id": "s001", "recorded_at": "2026-11-23T00:00:00+09:00", "source_ref": "synthetic:daily-dialogue-1", "context": "work-superior", "kind": "user-roleplay", "text": "네, 오늘은 좀 일찍 왔어요."},
+    {"id": "s002", "recorded_at": "2026-11-23T00:00:01+09:00", "source_ref": "synthetic:daily-dialogue-2", "context": "work-superior", "kind": "user-roleplay", "text": "점심 먹고 바로 들어갈게요."},
+    {"id": "s003", "recorded_at": "2026-11-23T00:00:02+09:00", "source_ref": "synthetic:daily-dialogue-3", "context": "work-superior", "kind": "user-roleplay", "text": "네, 정리하고 보내드릴게요."}
+  ],
+  "traits": [
+    {"id": "t001", "pattern": "상사에게 짧은 문장과 해요체 존댓말로 답한다.", "context": "work-superior", "status": "observed", "evidence": ["s001", "s002", "s003"]}
+  ]
+}
