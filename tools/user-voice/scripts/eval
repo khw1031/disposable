@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Offline integrity tests. No LLM behavior or real-user voice claim."""
+import copy
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+sys.dont_write_bytecode = True
+SKILL = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("voice_profile", SKILL / "scripts/profile.py")
+profile = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(profile)
+
+
+def main():
+    count = 0
+    with tempfile.TemporaryDirectory() as temp:
+        path = Path(temp) / "private/profile.json"
+        command = [sys.executable, str(SKILL / "scripts/profile.py")]
+        def run(*args):
+            return subprocess.run(command + list(args) + ["--profile", str(path)], capture_output=True, text=True)
+        assert run("init").returncode == 0
+        original = path.read_bytes()
+        assert run("init").returncode == 1 and path.read_bytes() == original
+        count += 1
+        assert run("add-sample", "--context", "casual", "--source-ref", "synthetic:turn-1", "--text", "밥 먹고 갈게").returncode == 0
+        assert run("add-sample", "--context", "casual", "--source-ref", "synthetic:turn-2", "--text", "나 이제 출발함").returncode == 0
+        data = profile.read_profile(path)
+        data["traits"] = [{"id": "t1", "pattern": "짧은 문장", "context": "casual", "status": "observed", "evidence": ["s001", "s002"]}]
+        assert not profile.validate(data)
+        count += 1
+        bad = copy.deepcopy(data)
+        bad["samples"][1]["source_ref"] = bad["samples"][0]["source_ref"]
+        assert any("distinct" in e for e in profile.validate(bad))
+        count += 1
+        bad = copy.deepcopy(data)
+        bad["traits"][0]["context"] = "work-superior"
+        assert any("context differs" in e for e in profile.validate(bad))
+        count += 1
+        bad = copy.deepcopy(data)
+        bad["traits"][0]["status"] = "confirmed"
+        assert any("confirmation_ref" in e for e in profile.validate(bad))
+        bad["traits"][0]["confirmation_ref"] = "synthetic:turn-3"
+        assert not profile.validate(bad)
+        count += 1
+        bad = copy.deepcopy(data)
+        bad["traits"][0]["evidence"] = ["missing"]
+        assert any("missing sample" in e for e in profile.validate(bad))
+        count += 1
+        bad = copy.deepcopy(data)
+        bad["samples"][0]["kind"] = "assistant-generated"
+        assert any("kind" in e for e in profile.validate(bad))
+        count += 1
+        path.write_text("{broken", encoding="utf-8")
+        original = path.read_bytes()
+        assert run("add-sample", "--context", "casual", "--source-ref", "synthetic:turn-4", "--text", "테스트").returncode == 1
+        assert path.read_bytes() == original
+        count += 1
+    behavior = json.loads((SKILL / "evals/behavior-cases.json").read_text())
+    assert behavior["synthetic"] is True and len(behavior["cases"]) >= 3
+    actor = json.loads((SKILL / "evals/actor-profile.json").read_text())
+    assert not profile.validate(actor)
+    demo = json.loads((SKILL / "evals/actor-demo.json").read_text())
+    assert demo["synthetic"] is True and actor["user_id"] == "synthetic-video-actor"
+    assert demo["document_edit"]["performed_by_this_skill"] is False
+    # Lexical anchors catch missing facts in this fixed, synthetic demonstration only.
+    reply = demo["rewrite"]["output"]
+    assert all(word in reply for word in ("핵심 수치", "앞으로 옮겼", "비교표", "넣었", "수정본", "첨부"))
+    assert all(sentence.strip().endswith("요") for sentence in reply.split(".") if sentence.strip())
+    assert demo["rewrite"]["new_deadline"] is None
+    assert demo["rewrite"]["new_responsibility"] is None
+    print(json.dumps({"pass": True, "integrity_checks": count,
+                      "behavior_cases": len(behavior["cases"]), "synthetic_demo_fact_honorific_check": True,
+                      "llm_behavior_tested": False}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
